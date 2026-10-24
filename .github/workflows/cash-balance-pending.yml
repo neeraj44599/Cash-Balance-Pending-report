@@ -2,42 +2,56 @@ name: Cash Balance Pending Report Morning Job
 
 on:
   schedule:
-    # यह रोज़ सुबह भारतीय समयानुसार (IST) 07:30 AM पर अपने आप चलेगा 
-    # (UTC समय के अनुसार सुबह 02:00 AM)
     - cron: '0 2 * * *'
-  workflow_dispatch: # इससे आप GitHub पर जाकर बटन दबाकर कभी भी रन कर सकते हैं
+  workflow_dispatch:
 
 jobs:
   run-report:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository Code
+    - name: Set up job
       uses: actions/checkout@v4
 
-    - name: Set up Python Environment
+    - name: Checkout Code
+      run: echo "Repository checked out successfully."
+
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-python: '3.10'
+        python-version: '3.10'
         cache: 'pip'
 
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install playwright pandas openpyxl requests
-
-    - name: Install Playwright Chromium Browser
-      run: |
         playwright install chromium --with-deps
 
-    - name: Run Cash Balance Pending Report
+    - name: Check Files
+      run: |
+        ls -la
+
+    - name: Verify Required Files
+      run: |
+        if [ ! -f cash-balance-pending-report.py ]; then
+          echo "Error: cash-balance-pending-report.py not found!"
+          exit 1
+        fi
+
+    - name: Run Automation Script
       env:
-        # यह आपके GitHub Secrets से सारे आईडी-पासवर्ड उठाएगा
         ACEN_USERNAME: ${{ secrets.ACEN_USERNAME }}
         ACEN_PASSWORD: ${{ secrets.ACEN_PASSWORD }}
         ACEN_LOGIN_URL: ${{ secrets.ACEN_LOGIN_URL }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
       run: |
         python cash-balance-pending-report.py
+
+    - name: Upload Generated Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pending-excel-report
+        path: Cash_Balance_Pending_Report.xlsx
