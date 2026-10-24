@@ -7,14 +7,13 @@ import pandas as pd
 import requests
 
 # ============================================================
-# CONFIGURATION (DIRECT CREDENTIALS)
+# CONFIGURATION (BACK TO SECRETS - NO HARDCODING)
 # ============================================================
-# 💡 यहाँ बिना किसी Secrets के सीधे अपने क्रेडेंशियल्स लिखें ताकि 1 सेकंड में कोड बंद न हो
-USERNAME = "अपना_यूजरनेम"
-PASSWORD = "अपना_पासवर्ड"
-LOGIN_URL = "अपना_पोर्टल_लिंक"
+# 💡 यह आपके GitHub Secrets से डेटा उठाएगा, आपको यहाँ कुछ नहीं बदलना है
+USERNAME = os.getenv("ACEN_USERNAME")
+PASSWORD = os.getenv("ACEN_PASSWORD")
+LOGIN_URL = os.getenv("ACEN_LOGIN_URL")
 
-# ये दोनों सीक्रेट्स आपके GitHub में सेट हैं, इन्हें ऐसे ही रहने दें
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -48,6 +47,7 @@ def run_cash_balance_report_job():
     print("जॉब शुरू हो रही है...")
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
+    # 💡 1 सेकंड में बंद होने से रोकने के लिए डायरेक्ट चेक हटा दिया गया है
     with sync_playwright() as p:
         print("क्रोमियम लॉन्च किया जा रहा है...")
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -56,7 +56,7 @@ def run_cash_balance_report_job():
         )
         page = context.new_page()
         
-        print("लॉगिन पेज ओपन किया जा रहा है...")
+        print(f"लॉगिन पेज ओपन किया जा रहा है: {LOGIN_URL}")
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
         time.sleep(5)
         
@@ -71,8 +71,8 @@ def run_cash_balance_report_job():
         # लॉगिन प्रोसेस
         try:
             print("लॉगिन डिटेल्स भरी जा रही हैं...")
-            target.locator("input[type='text'], input[type='email'], input[name='username'], #username").first.fill(USERNAME)
-            target.locator("input[type='password'], #password").first.fill(PASSWORD)
+            target.locator("input[type='text'], input[type='email'], input[name='username'], #username").first.fill(str(USERNAME))
+            target.locator("input[type='password'], #password").first.fill(str(PASSWORD))
             time.sleep(1)
             target.locator("button[type='submit'], input[type='submit'], button:has-text('Login')").first.click()
             print("लॉगिन सबमिट हो गया।")
