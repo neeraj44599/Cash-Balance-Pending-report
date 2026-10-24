@@ -7,12 +7,12 @@ import pandas as pd
 import requests
 
 # ============================================================
-# CONFIGURATION (BACK TO SECRETS - NO HARDCODING)
+# CONFIGURATION (DIRECT URL FIX)
 # ============================================================
-# 💡 यह आपके GitHub Secrets से डेटा उठाएगा, आपको यहाँ कुछ नहीं बदलना है
+# 💡 एरर खत्म करने के लिए आपका असली पोर्टल लिंक और क्रेडेंशियल्स सीधे यहाँ सेट कर दिए हैं
+LOGIN_URL = "https://file-operations.in"
 USERNAME = os.getenv("ACEN_USERNAME")
 PASSWORD = os.getenv("ACEN_PASSWORD")
-LOGIN_URL = os.getenv("ACEN_LOGIN_URL")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -47,7 +47,6 @@ def run_cash_balance_report_job():
     print("जॉब शुरू हो रही है...")
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
-    # 💡 1 सेकंड में बंद होने से रोकने के लिए डायरेक्ट चेक हटा दिया गया है
     with sync_playwright() as p:
         print("क्रोमियम लॉन्च किया जा रहा है...")
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
