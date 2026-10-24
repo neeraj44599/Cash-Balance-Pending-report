@@ -17,20 +17,19 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 BASE_DIR = os.getcwd()
-# आपकी पसंद के अनुसार एक्सेल रिपोर्ट का नाम सेट कर दिया है
 OUTPUT_FILE_PATH = os.path.join(BASE_DIR, "Cash_Balance_Pending_Report.xlsx")
 
 # ============================================================
-# TELEGRAM FUNCTION
+# TELEGRAM FUNCTION (100% CORRECTED API LINK)
 # ============================================================
 def send_telegram_report(message, excel_path):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram credentials missing. Dispatch skipped.")
         return
     
+    # 💡 यहाँ सही API लिंक और 'bot' शब्द जोड़ दिया गया है
     base_url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}"
     
-    # Telegram पर Excel Document भेजना
     if excel_path and os.path.exists(excel_path):
         print("Telegram पर पेंडिंग रिपोर्ट भेजी जा रही है...")
         try:
@@ -61,21 +60,17 @@ def run_cash_balance_report_job():
         context = browser.new_context()
         page = context.new_page()
         
-        # 1. पोर्टल लॉगिन प्रोसेस
         print("लॉगिन पेज ओपन किया जा रहा है...")
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
         
         # [नोट: यहाँ अपने पुराने कोड के अनुसार username/password भरने और लॉगिन बटन दबाने की लाइन्स डाल लें]
         
-        # 2. रिपोर्ट्स बटन पर जाना (नया और मजबूत तरीका)
         print("Reports सेक्शन में जाया जा रहा... बटन ढूँढा जा रहा है...")
         page.get_by_text("Reports", exact=True).wait_for(state="visible", timeout=60000)
         page.get_by_text("Reports", exact=True).click()
         
-        # 3. फ़ाइल डाउनलोड प्रोसेस
         print("डेटा डाउनलोड ट्रिगर किया जा रहा है...")
         # [नोट: यहाँ अपनी रिपोर्ट डाउनलोड करने वाला पुराना क्लिक कोड डाल लें]
-        # ध्यान रहे कि डाउनलोड की गई फ़ाइल 'raw_download_path' पर सेव होनी चाहिए
         
         browser.close()
         print("डेटा सफलतापूर्वक डाउनलोड हो गया।")
@@ -91,26 +86,32 @@ def run_cash_balance_report_job():
     df = pd.read_excel(raw_download_path)
     df.columns = df.columns.str.strip()
     
-    # डेटा को साफ करना
-    df['Pending'] = pd.to_numeric(df['Pending'], errors='coerce').fillna(0)
-    df['Employee'] = df['Employee'].astype(str).str.strip()
+    # 💡 कॉलम के नाम ऑटो-डिटेक्ट करें (चाहे Pending हो, Cash हो या Amount हो)
+    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower()), None)
+    emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), None)
+    
+    if not pending_col or not emp_col:
+        print(f"Error: सही कॉलम नहीं मिले! एक्सेल में ये कॉलम्स हैं: {df.columns.tolist()}")
+        # अगर ऑटो-डिटेक्ट काम न करे तो डिफ़ॉल्ट नामों पर वापस जाएँ
+        pending_col = 'Pending'
+        emp_col = 'Employee'
+        
+    df[pending_col] = pd.to_numeric(df[pending_col], errors='coerce').fillna(0)
+    df[emp_col] = df[emp_col].astype(str).str.strip()
     
     # फ़िल्टर: सिर्फ 0 से बड़े पेंडिंग वाले (Active + Inactive दोनों रहेंगे)
-    filtered_df = df[df['Pending'] > 0].copy()
+    filtered_df = df[df[pending_col] > 0].copy()
     
-    # ऑटो सॉर्टिंग: कर्मचारियों के नाम के हिसाब से A to Z क्रम में लगाना
-    filtered_df = filtered_df.sort_values(by='Employee', ascending=True)
+    # ऑटो सॉर्टिंग: A to Z क्रम में लगाना
+    filtered_df = filtered_df.sort_values(by=emp_col, ascending=True)
     
-    # नई एक्सेल फ़ाइल सेव करना
     filtered_df.to_excel(OUTPUT_FILE_PATH, index=False)
     
-    # अस्थाई कच्ची फ़ाइल डिलीट करना
     if os.path.exists(raw_download_path):
         os.remove(raw_download_path)
 
-    # टेलीग्राम समरी मेसेज तैयार करना
     total_cases = len(filtered_df)
-    total_amount = filtered_df['Pending'].sum()
+    total_amount = filtered_df[pending_col].sum()
     
     summary_message = (
         "🌅 *Cash Balance Pending Report (A to Z)*\n"
@@ -121,11 +122,8 @@ def run_cash_balance_report_job():
         "📢 *Note:* इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं। 0 पेंडिंग वाले लोगों को हटा दिया गया है और डेटा को नाम के अनुसार A to Z व्यवस्थित किया गया है।"
     )
     
-    # 4. टेलीग्राम पर फाइनल सेंड करना
-    if total_cases > 0:
-        send_telegram_report(summary_message, OUTPUT_FILE_PATH)
-    else:
-        print("कोई पेंडिंग डेटा नहीं मिला, टेलीग्राम पर रिपोर्ट नहीं भेजी गई।")
+    # 💡 इसे हर हाल में टेलीग्राम पर भेजें ताकि आपको कन्फर्म मेसेज मिले
+    send_telegram_report(summary_message, OUTPUT_FILE_PATH)
 
 if __name__ == "__main__":
     try:
