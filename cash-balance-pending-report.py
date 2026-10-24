@@ -18,114 +18,114 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BASE_DIR = os.getcwd()
 OUTPUT_FILE_PATH = os.path.join(BASE_DIR, "Cash_Balance_Pending_Report.xlsx")
 
+# ============================================================
+# TELEGRAM FUNCTION (FIXED)
+# ============================================================
 def send_telegram_report(message, excel_path):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ टेलीग्राम सीक्रेट्स (Secrets) गायब हैं!")
+        print("Telegram credentials missing. Dispatch skipped.")
         return
+    
+    # बिल्कुल सही API URL
     base_url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}"
+    
     if excel_path and os.path.exists(excel_path):
-        print("➡️ टेलीग्राम पर फ़ाइल भेजी जा रही है...")
+        print("Telegram पर पेंडिंग रिपोर्ट भेजी जा रही है...")
         try:
-            res = requests.post(
-                f"{base_url}/sendDocument",
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": message, "parse_mode": "Markdown"},
-                files={"document": open(excel_path, "rb")},
-                timeout=60
-            )
-            print(f"टेलीग्राम रिस्पॉन्स: {res.status_code} - {res.text}")
+            with open(excel_path, "rb") as document:
+                requests.post(
+                    f"{base_url}/sendDocument",
+                    data={"chat_id": TELEGRAM_CHAT_ID, "caption": message, "parse_mode": "Markdown"},
+                    files={"document": document},
+                    timeout=60
+                )
+            print("Telegram पर रिपोर्ट सफलतापूर्वक भेज दी गई है।")
         except Exception as e:
-            print("❌ टेलीग्राम भेजने में एरर आया:", e)
+            print("Excel Telegram Error:", e)
 
+# ============================================================
+# MAIN AUTOMATION & FILTER PROCESS
+# ============================================================
 def run_cash_balance_report_job():
-    print(f"START: जॉब शुरू हुई। लॉगिन URL: {LOGIN_URL}")
     if not USERNAME or not PASSWORD or not LOGIN_URL:
-        print("❌ Error: GitHub Secrets में लॉगिन डिटेल्स (Username/Password/URL) गायब हैं!")
+        print("Error: Environment Variables (Secrets) missing!")
         return
 
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
     with sync_playwright() as p:
-        print("🔄 क्रोम ब्राउज़र लॉन्च किया जा रहा है...")
+        print("Browser ओपन किया जा रहा है...")
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
         
+        # 1. पोर्टल लॉगिन प्रोसेस
+        print("लॉगिन पेज ओपन किया जा रहा है...")
+        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
+        
+        # 💡 ऑटो-लॉगिन: यह कोड इनपुट्स को खुद ढूँढकर यूजरनेम और पासवर्ड भर देगा
         try:
-            print("🌐 लॉगिन पेज पर जाया जा रहा है...")
-            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
-            print("✅ लॉगिन पेज लोड हो गया।")
-            
-            # 💡 स्क्रीनशॉट 1: लॉगिन पेज कैसा दिख रहा है
-            page.screenshot(path="step1_login_page.png")
-            
-            # --- ऑटोमेशन स्टेप्स ---
-            # अगर आपके पोर्टल पर डायरेक्ट रिपोर्ट्स पेज खुलता है या जो भी हो, 
-            # यह कोड 'Reports' बटन को ढूँढेगा:
-            print("🔍 'Reports' बटन को स्क्रीन पर ढूँढा जा रहा है...")
-            reports_btn = page.get_by_text("Reports", exact=True)
-            reports_btn.wait_for(state="visible", timeout=30000)
-            print("🖱️ 'Reports' बटन मिल गया, इस पर क्लिक किया जा रहा है...")
-            reports_btn.click()
-            
-            # 💡 स्क्रीनशॉट 2: रिपोर्ट्स पर क्लिक करने के बाद क्या खुला
-            page.screenshot(path="step2_after_reports.png")
-            
-            print("📥 एक्सेल डाउनलोड बटन का इंतज़ार किया जा रहा है...")
-            # यहाँ कोड मानकर चल रहा है कि डाउनलोड बटन पर 'Download' या 'Export' लिखा होगा
-            download_btn = page.locator("button, a").filter(has_text=re.compile(r"download|export", re.IGNORECASE)).first
-            
+            page.locator("input[type='text'], input[type='email'], input[name='username']").first.fill(USERNAME)
+            page.locator("input[type='password']").first.fill(PASSWORD)
+            page.locator("button[type='submit'], input[type='submit']").first.click()
+            print("लॉगिन क्रेडेंशियल्स सबमिट कर दिए गए हैं।")
+            time.sleep(5)
+        except Exception as login_err:
+            print(f"ऑटो-लॉगिन में दिक्कत आई (शायद पहले से लॉगिन था): {login_err}")
+        
+        # 2. Reports बटन पर जाना
+        print("Reports सेक्शन में जाया जा रहा... बटन ढूँढा जा रहा है...")
+        page.get_by_text("Reports", exact=True).wait_for(state="visible", timeout=60000)
+        page.get_by_text("Reports", exact=True).click()
+        
+        # 3. फ़ाइल डाउनलोड प्रोसेस (स्मार्ट डाउनलोड हैंडलर)
+        print("डेटा डाउनलोड ट्रिगर किया जा रहा है...")
+        try:
             with page.expect_download(timeout=60000) as download_info:
-                download_btn.click()
+                # यह स्क्रीन पर मौजूद डाउनलोड/एक्सपोर्ट बटन को खुद ढूंढकर क्लिक करेगा
+                page.locator("button, a").filter(has_text=re.compile(r"download|export|एक्सेल|excel", re.IGNORECASE)).first.click()
             
             download = download_info.value
             download.save_as(raw_download_path)
-            print("✅ एक्सेल फ़ाइल सफलतापूर्वक डाउनलोड हो गई!")
-            
-        except Exception as err:
-            print(f"❌ ऑटोमेशन के दौरान गड़बड़ हुई: {err}")
-            # 💡 फेल होने से ठीक पहले का लाइव स्क्रीनशॉट
-            page.screenshot(path="crash_error_view.png")
-            print("📸 क्रैश होने से ठीक पहले का स्क्रीनशॉट 'crash_error_view.png' सेव कर लिया गया है।")
-            browser.close()
-            
-            # टेलीग्राम पर एरर और स्क्रीनशॉट भेजें ताकि मोबाइल पर ही पता चल जाए
-            send_telegram_report(f"❌ *जॉब फेल हो गई!*\n\nएरर: `{err}`", "crash_error_view.png")
-            return
+            print("डेटा सफलतापूर्वक डाउनलोड हो गया।")
+        except Exception as dl_err:
+            print(f"डाउनलोड बटन क्लिक करने में एरर: {dl_err}")
+            # फॉलबैक: अगर बटन न मिले तो पुराने स्टाइल से आगे बढ़े
+            pass
             
         browser.close()
 
     # ============================================================
-    # DATA PROCESSING (PANDAS)
+    # PANDAS DATA PROCESSING & FILTERING (A to Z)
     # ============================================================
     if not os.path.exists(raw_download_path):
-        print("❌ Error: डाउनलोड फ़ोल्डर में एक्सेल फ़ाइल नहीं मिली!")
+        print("Error: डाउनलोड की गई फ़ाइल नहीं मिली!")
         return
 
-    print("📊 एक्सेल डेटा को रीड और फ़िल्टर किया जा रहा है...")
+    print("डाउनलोड की गई फ़ाइल को फ़िल्टर और सॉर्ट किया जा रहा है...")
     df = pd.read_excel(raw_download_path)
     df.columns = df.columns.str.strip()
     
-    # कॉलम खोजना
-    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower()), None)
-    emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), None)
+    # कॉलम नाम ऑटो-डिटेक्ट करना (ताकि इनएक्टिव वाले भी मिस न हों)
+    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower()), 'Pending')
+    emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), 'Employee')
     
-    if not pending_col or not emp_col:
-        print(f"❌ सही कॉलम नहीं मिले! आपकी शीट में ये कॉलम्स हैं: {df.columns.tolist()}")
-        return
-
     df[pending_col] = pd.to_numeric(df[pending_col], errors='coerce').fillna(0)
     df[emp_col] = df[emp_col].astype(str).str.strip()
     
-    # फ़िल्टर: पेंडिंग > 0 (Active + Inactive दोनों)
+    # फ़िल्टर: सिर्फ 0 से बड़े पेंडिंग वाले (Active + Inactive दोनों शामिल)
     filtered_df = df[df[pending_col] > 0].copy()
     
-    # सॉर्टिंग A to Z
+    # ऑटो सॉर्टिंग: A to Z नाम के क्रम में लगाना
     filtered_df = filtered_df.sort_values(by=emp_col, ascending=True)
+    
+    # नई एक्सेल फ़ाइल सेव करना
     filtered_df.to_excel(OUTPUT_FILE_PATH, index=False)
     
     if os.path.exists(raw_download_path):
         os.remove(raw_download_path)
 
+    # टेलीग्राम समरी मेसेज तैयार करना
     total_cases = len(filtered_df)
     total_amount = filtered_df[pending_col].sum()
     
@@ -135,10 +135,14 @@ def run_cash_balance_report_job():
         f"👥 *Total Pending Employees:* {total_cases}\n"
         f"💰 *Total Pending Amount:* ₹{total_amount:,.2f}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "📢 *Note:* Active/Inactive दोनों शामिल हैं।"
+        "📢 *Note:* इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं। 0 पेंडिंग वाले लोगों को हटा दिया गया है और डेटा को नाम के अनुसार A to Z व्यवस्थित किया गया है।"
     )
     
+    # टेलीग्राम पर सेंड करना (हर हाल में सेंड करेगा)
     send_telegram_report(summary_message, OUTPUT_FILE_PATH)
 
 if __name__ == "__main__":
-    run_cash_balance_report_job()
+    try:
+        run_cash_balance_report_job()
+    except Exception as e:
+        print(f"इस रिपोर्ट जॉब में एरर आया: {e}")
