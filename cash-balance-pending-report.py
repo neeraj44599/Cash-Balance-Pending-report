@@ -57,7 +57,7 @@ def run_cash_balance_report_job():
             # 3. फ़ाइल डाउनलोड प्रोसेस (इसे बदलें)
         print("डेटा डाउनलोड ट्रिगर किया जा रहा है...")
         try:
-            with page.expect_download(timeout=12000) as download_info:
+            with page.expect_download(timeout=60000) as download_info:
                 # 💡 यहाँ अपने पोर्टल के डाउनलोड बटन का Selector डालें (जैसे text="Download" या .btn)
                 page.get_by_role("button", name="Download").click() 
             
