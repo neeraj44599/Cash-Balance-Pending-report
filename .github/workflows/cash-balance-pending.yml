@@ -10,48 +10,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Set up job
-      uses: actions/checkout@v4
+      - name: Set up job
+        uses: actions/checkout@v4
 
-    - name: Checkout Code
-      run: echo "Repository checked out successfully."
+      - name: Checkout Code
+        run: echo "Repository checked out successfully."
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: 'pip'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install playwright pandas openpyxl requests
-        playwright install chromium --with-deps
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright pandas openpyxl requests
+          playwright install chromium --with-deps
 
-    - name: Check Files
-      run: |
-        ls -la
+      - name: Check Files
+        run: ls -la
 
-    - name: Verify Required Files
-      run: |
-        if [ ! -f cash-balance-pending-report.py ]; then
-          echo "Error: cash-balance-pending-report.py not found!"
-          exit 1
-        fi
+      - name: Verify Required Files
+        run: |
+          if [ ! -f cash-balance-pending-report.py ]; then
+            echo "Error: cash-balance-pending-report.py not found!"
+            exit 1
+          fi
 
-    - name: Run Automation Script
-      env:
-        ACEN_USERNAME: ${{ secrets.ACEN_USERNAME }}
-        ACEN_PASSWORD: ${{ secrets.ACEN_PASSWORD }}
-        ACEN_LOGIN_URL: ${{ secrets.ACEN_LOGIN_URL }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        python cash-balance-pending-report.py
+      - name: Run Automation Script
+        env:
+          ACEN_USERNAME: ${{ secrets.ACEN_USERNAME }}
+          ACEN_PASSWORD: ${{ secrets.ACEN_PASSWORD }}
+          ACEN_LOGIN_URL: ${{ secrets.ACEN_LOGIN_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python cash-balance-pending-report.py
 
-    - name: Upload Generated Reports
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: pending-excel-report
-        path: Cash_Balance_Pending_Report.xlsx
+      - name: Upload Generated Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-excel-report
+          path: Cash_Balance_Pending_Report.xlsx
