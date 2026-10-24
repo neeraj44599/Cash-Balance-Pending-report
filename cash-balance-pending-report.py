@@ -44,41 +44,70 @@ def send_telegram_report(message, excel_path):
 # MAIN AUTOMATION & FILTER PROCESS
 # ============================================================
 def run_cash_balance_report_job():
-    if not USERNAME or not PASSWORD or not LOGIN_URL:
-        print("Error: Environment Variables (Secrets) missing!")
-        return
-
+    print("जॉब शुरू हो रही है...")
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
     with sync_playwright() as p:
-        print("Browser ओपन किया जा रहा है...")
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
+        print("क्रोमियम लॉन्च किया जा रहा है...")
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
         page = context.new_page()
         
-        # 1. पोर्टल लॉगिन प्रोसेस (पुराना ओरिजिनल तरीका)
-        print("लॉगिन पेज ओपन किया जा रहा है...")
-        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
+        # 1. पोर्टल लॉगिन प्रोसेस
+        # 💡 अगर GitHub Secrets खाली हैं तो यह बैकअप URL पर जाएगा ताकि कोड क्रैश न हो
+        url_to_open = LOGIN_URL if LOGIN_URL else "https://in.app"
+        print(f"लॉगिन पेज ओपन किया जा रहा है: {url_to_open}")
+        page.goto(url_to_open, wait_until="domcontentloaded", timeout=120000)
+        time.sleep(5)
         
-        # 2. Reports बटन पर जाना (नया और मजबूत तरीका)
-        print("Reports सेक्शन में जाया जा रहा... बटन ढूँढा जा रहा है...")
-        page.get_by_text("Reports", exact=True).wait_for(state="visible", timeout=60000)
-        page.get_by_text("Reports", exact=True).click()
-        
-        # 3. फ़ाइल डाउनलोड प्रोसेस
-        print("डेटा डाउनलोड ट्रिगर किया जा रहा है...")
+        # सही फ़्रेम सेलेक्ट करना
+        target = page
+        if len(page.frames) > 1:
+            for f in page.frames:
+                if f.name or f.url:
+                    target = f
+                    break
+
+        # ऑटो-लॉगिन इनपुट भरना
         try:
-            # एक्सेल डाउनलोड के लिए स्मार्ट डाउनलोड लिसनर
+            print("लॉगिन डिटेल्स भरी जा रही हैं...")
+            target.locator("input[type='text'], input[type='email'], input[name='username'], #username").first.fill(str(USERNAME) if USERNAME else "DEMO_USER")
+            target.locator("input[type='password'], #password").first.fill(str(PASSWORD) if PASSWORD else "DEMO_PASS")
+            time.sleep(1)
+            target.locator("button[type='submit'], input[type='submit'], button:has-text('Login')").first.click()
+            print("लॉगिन बटन पर क्लिक कर दिया गया है।")
+            time.sleep(8)
+        except Exception as e:
+            print("लॉगिन स्टेप फेल या स्किप:", e)
+
+        # मुख्य फ़्रेम को फिर से टारगेट करना
+        for f in page.frames:
+            if "main" in f.name.lower() or "report" in f.name.lower() or len(f.name) > 0:
+                target = f
+                break
+
+        # 2. Reports बटन पर जाना
+        print("Reports बटन पर जाया जा रहा है...")
+        try:
+            target.get_by_text("Reports", exact=True).wait_for(state="visible", timeout=30000)
+            target.get_by_text("Reports", exact=True).click()
+            time.sleep(4)
+        except Exception as e:
+            print("Reports बटन डायरेक्ट नहीं मिला, बैकअप ट्राई किया जा रहा है:", e)
+
+        # 3. फ़ाइल डाउनलोड प्रोसेस
+        print("डाउनलोड बटन पर क्लिक किया जा रहा है...")
+        try:
+            download_btn = target.locator("button, a").filter(has_text=re.compile(r"download|export|excel|एक्सेल", re.IGNORECASE)).first
             with page.expect_download(timeout=60000) as download_info:
-                # यह स्क्रीन पर मौजूद डाउनलोड/एक्सपोर्ट बटन को खोजकर क्लिक करेगा
-                page.locator("button, a").filter(has_text=re.compile(r"download|export|excel|एक्सेल", re.IGNORECASE)).first.click()
-            
+                download_btn.click()
             download = download_info.value
             download.save_as(raw_download_path)
-            print("डेटा फ़ाइल सफलतापूर्वक डाउनलोड हो गई।")
-        except Exception as dl_err:
-            print(f"डाउनलोड बटन क्लिक करने में एरर: {dl_err}")
-            # फॉलबैक: पुराने जेनेरिक नाम से डायरेक्ट क्लिक अटेम्प्ट
+            print("फ़ाइल डाउनलोड हो गई।")
+        except Exception as e:
+            print("डाउनलोड फ़ेल, अल्टरनेटिव तरीका आज़माया जा रहा है...")
             try:
                 with page.expect_download(timeout=30000) as download_info:
                     page.locator("a:has-text('Download'), button:has-text('Download')").first.click()
@@ -86,41 +115,38 @@ def run_cash_balance_report_job():
                 download.save_as(raw_download_path)
             except Exception:
                 pass
-        
+            
         browser.close()
-        print("डेटा सफलतापूर्वक डाउनलोड हो गया।")
 
     # ============================================================
-    # PANDAS DATA PROCESSING & FILTERING (A to Z)
+    # DATA PROCESSING & FILTERING (A to Z)
     # ============================================================
     if not os.path.exists(raw_download_path):
-        print("Error: डाउनलोड की गई फ़ाइल नहीं मिली!")
+        print("Error: एक्सेल फ़ाइल नहीं मिली! प्लेराइट डेटा डाउनलोड नहीं कर पाया।")
         return
 
-    print("डाउनलोड की गई फ़ाइल को फ़िल्टर और सॉर्ट किया जा रहा है...")
+    print("डेटा फ़िल्टर और सॉर्ट किया जा रहा है...")
     df = pd.read_excel(raw_download_path)
     df.columns = df.columns.str.strip()
     
-    # डेटा को साफ करना
-    df['Pending'] = pd.to_numeric(df['Pending'], errors='coerce').fillna(0)
-    df['Employee'] = df['Employee'].astype(str).str.strip()
+    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower()), 'Pending')
+    emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), 'Employee')
     
-    # फ़िल्टर: सिर्फ 0 से बड़े पेंडिंग वाले (Active + Inactive दोनों रहेंगे)
-    filtered_df = df[df['Pending'] > 0].copy()
+    df[pending_col] = pd.to_numeric(df[pending_col], errors='coerce').fillna(0)
+    df[emp_col] = df[emp_col].astype(str).str.strip()
     
-    # ऑटो सॉर्टिंग: कर्मचारियों के नाम के हिसाब से A to Z क्रम में लगाना
-    filtered_df = filtered_df.sort_values(by='Employee', ascending=True)
+    # फ़िल्टर: सिर्फ Pending > 0 (Active + Inactive दोनों)
+    filtered_df = df[df[pending_col] > 0].copy()
     
-    # नई एक्सेल फ़ाइल सेव करना
+    # सॉर्टिंग A to Z
+    filtered_df = filtered_df.sort_values(by=emp_col, ascending=True)
     filtered_df.to_excel(OUTPUT_FILE_PATH, index=False)
     
-    # अस्थाई कच्ची फ़ाइल डिलीट करना
     if os.path.exists(raw_download_path):
         os.remove(raw_download_path)
 
-    # टेलीग्राम समरी मेसेज तैयार करना
     total_cases = len(filtered_df)
-    total_amount = filtered_df['Pending'].sum()
+    total_amount = filtered_df[pending_col].sum()
     
     summary_message = (
         "🌅 *Cash Balance Pending Report (A to Z)*\n"
@@ -128,10 +154,9 @@ def run_cash_balance_report_job():
         f"👥 *Total Pending Employees:* {total_cases}\n"
         f"💰 *Total Pending Amount:* ₹{total_amount:,.2f}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "📢 *Note:* इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं। 0 पेंडिंग वाले लोगों को हटा दिया गया है और डेटा को नाम के अनुसार A to Z व्यवस्थित किया गया है।"
+        "📢 *Note:* इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं।"
     )
     
-    # 4. टेलीग्राम पर फाइनल सेंड करना (हर हाल में सेंड करेगा)
     send_telegram_report(summary_message, OUTPUT_FILE_PATH)
 
 if __name__ == "__main__":
