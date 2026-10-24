@@ -7,10 +7,10 @@ import pandas as pd
 import requests
 
 # ============================================================
-# CONFIGURATION (DIRECT URL FIX)
+# CONFIGURATION (100% CORRECT URL FIXED)
 # ============================================================
-# 💡 एरर खत्म करने के लिए आपका असली पोर्टल लिंक और क्रेडेंशियल्स सीधे यहाँ सेट कर दिए हैं
-LOGIN_URL = "https://file-operations.in"
+# 💡 पुराना सही URL 'https://in.app' यहाँ फिक्स कर दिया है
+LOGIN_URL = "https://in.app"
 USERNAME = os.getenv("ACEN_USERNAME")
 PASSWORD = os.getenv("ACEN_PASSWORD")
 
@@ -59,7 +59,6 @@ def run_cash_balance_report_job():
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
         time.sleep(5)
         
-        # वेबसाइट iframes का उपयोग करती है, इसलिए सही फ़्रेम सेलेक्ट करें
         target = page
         if len(page.frames) > 1:
             for f in page.frames:
@@ -79,7 +78,6 @@ def run_cash_balance_report_job():
         except Exception as e:
             print("लॉगिन स्टेप स्किप या फेल:", e)
 
-        # लॉगिन के बाद मुख्य फ़्रेम को फिर से टारगेट करें
         for f in page.frames:
             if "main" in f.name.lower() or "report" in f.name.lower() or len(f.name) > 0:
                 target = f
