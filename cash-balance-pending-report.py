@@ -54,13 +54,20 @@ def run_cash_balance_report_job():
 
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
-    with sync_playwright() as p:
-        print("Browser ओपन किया जा रहा है...")
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
-        
-        print("लॉगिन पेज ओपन किया जा रहा है...")
+            # 3. फ़ाइल डाउनलोड प्रोसेस (इसे बदलें)
+        print("डेटा डाउनलोड ट्रिगर किया जा रहा है...")
+        try:
+            with page.expect_download(timeout=12000) as download_info:
+                # 💡 यहाँ अपने पोर्टल के डाउनलोड बटन का Selector डालें (जैसे text="Download" या .btn)
+                page.get_by_role("button", name="Download").click() 
+            
+            download = download_info.value
+            download.save_as(raw_download_path)
+            print("फ़ाइल सफलतापूर्वक डाउनलोड होकर सेव हो गई।")
+        except Exception as dl_error:
+            print(f"डाउनलोड फेल हो गया या बटन नहीं मिला: {dl_error}")
+            browser.close()
+            return
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=120000)
         
         # [नोट: यहाँ अपने पुराने कोड के अनुसार username/password भरने और लॉगिन बटन दबाने की लाइन्स डाल लें]
