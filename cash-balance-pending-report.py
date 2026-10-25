@@ -19,18 +19,18 @@ BASE_DIR = os.getcwd()
 OUTPUT_FILE_PATH = os.path.join(BASE_DIR, "Cash_Balance_Pending_Report.xlsx")
 
 # ============================================================
-# TELEGRAM FUNCTION (100% DELIVERED FIX)
+# TELEGRAM FUNCTION (100% FIXED SPACING & URL)
 # ============================================================
 def send_telegram_report(message, excel_path):
-    def send_telegram_report(message, excel_path):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram credentials missing. Dispatch skipped.")
         return
     
     base_url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}"
-
+    
+    if excel_path and os.path.exists(excel_path):
+        print("Telegram पर पेंडिंग रिपोर्ट भेजी जा रही है...")
         try:
-            # 💡 'with open' का उपयोग करने से फ़ाइल भेजने के बाद अपने आप बंद हो जाती है और रिक्वेस्ट नहीं अटकती
             with open(excel_path, "rb") as document:
                 res = requests.post(
                     f"{base_url}/sendDocument",
@@ -41,6 +41,7 @@ def send_telegram_report(message, excel_path):
             print(f"टेलीग्राम रिस्पॉन्स स्टेटस: {res.status_code}")
         except Exception as e:
             print("Excel Telegram Error:", e)
+
 # ============================================================
 # MAIN AUTOMATION & FILTER PROCESS
 # ============================================================
@@ -57,7 +58,6 @@ def run_cash_balance_report_job():
         page = context.new_page()
         
         # 1. पोर्टल लॉगिन प्रोसेस
-        # 💡 अगर GitHub Secrets खाली हैं तो यह बैकअप URL पर जाएगा ताकि कोड क्रैश न हो
         url_to_open = LOGIN_URL if LOGIN_URL else "https://in.app"
         print(f"लॉगिन पेज ओपन किया जा रहा है: {url_to_open}")
         page.goto(url_to_open, wait_until="domcontentloaded", timeout=120000)
