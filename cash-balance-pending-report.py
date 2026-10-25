@@ -22,14 +22,13 @@ OUTPUT_FILE_PATH = os.path.join(BASE_DIR, "Cash_Balance_Pending_Report.xlsx")
 # TELEGRAM FUNCTION (100% DELIVERED FIX)
 # ============================================================
 def send_telegram_report(message, excel_path):
+    def send_telegram_report(message, excel_path):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram credentials missing. Dispatch skipped.")
         return
     
     base_url = f"https://telegram.org{TELEGRAM_BOT_TOKEN}"
-    
-    if excel_path and os.path.exists(excel_path):
-        print("Telegram पर पेंडिंग रिपोर्ट भेजी जा रही है...")
+
         try:
             # 💡 'with open' का उपयोग करने से फ़ाइल भेजने के बाद अपने आप बंद हो जाती है और रिक्वेस्ट नहीं अटकती
             with open(excel_path, "rb") as document:
