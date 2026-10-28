@@ -4,10 +4,14 @@ import os
 import time
 import re
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import Font, Border, Side, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 import requests
+import matplotlib.pyplot as plt
 
 # ============================================================
-# CONFIGURATION (CREDENTIALS FROM SECRETS)
+# CONFIGURATION
 # ============================================================
 USERNAME = os.getenv("ACEN_USERNAME")
 PASSWORD = os.getenv("ACEN_PASSWORD")
@@ -17,50 +21,169 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 BASE_DIR = os.getcwd()
+
+HR_FILE_PATH = os.path.join(
+    BASE_DIR,
+    "Weekly HR Update as on 17062026.xlsx.xlsx"
+)
+
+# आपकी पसंद के अनुसार फाइनल पेंडिंग एक्सेल रिपोर्ट का नाम
 OUTPUT_FILE_PATH = os.path.join(BASE_DIR, "Cash_Balance_Pending_Report.xlsx")
+SCREENSHOT_PATH = os.path.join(BASE_DIR, "pending_report_screenshot.png")
 
 # ============================================================
-# TELEGRAM FUNCTIONS (FIXED REQUEST METHOD)
+# VALIDATE CONFIGURATION
 # ============================================================
-def send_telegram_report(bot_token, chat_id, message, excel_path=None):
+def validate_configuration():
+    required = {
+        "ACEN_USERNAME": USERNAME,
+        "ACEN_PASSWORD": PASSWORD,
+        "ACEN_LOGIN_URL": LOGIN_URL,
+        "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID
+    }
+    missing = [key for key, value in required.items() if not value]
+    if missing:
+        raise Exception("Missing GitHub Secrets: " + ", ".join(missing))
+    print("All GitHub Secrets are available.")
+
+# ============================================================
+# EMPLOYEE ID NORMALIZATION
+# ============================================================
+def normalize_employee_id(value):
+    if pd.isna(value):
+        return ""
+    value = str(value).strip().upper()
+    value = value.replace("\u00A0", "").replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "")
+    if value.endswith(".0"):
+        value = value[:-2]
+    return value
+
+# ============================================================
+# STATUS CLEANING
+# ============================================================
+def clean_status(value):
+    if pd.isna(value):
+        return ""
+    return str(value).strip().replace("\u00A0", " ")
+
+# ============================================================
+# TELEGRAM FUNCTIONS
+# ============================================================
+def telegram_request(url, data=None, files=None):
+    try:
+        response = requests.post(url, data=data, files=files, timeout=60)
+        if not response.ok:
+            print("Telegram API Error:", response.status_code, response.text)
+            return False
+        return True
+    except Exception as e:
+        print("Telegram Request Exception:", e)
+        return False
+
+def send_telegram_report(bot_token, chat_id, message, excel_path=None, screenshot_path=None):
     if not bot_token or not chat_id:
-        print("Telegram credentials missing. Dispatch skipped.")
+        print("Telegram credentials missing. Telegram dispatch skipped.")
         return
 
-    base_url = f"https://telegram.org{bot_token}"
+    base_url = f"https://api.telegram.org/bot{bot_token}"
 
-    if excel_path and os.path.exists(excel_path):
-        print("Sending Excel file with report caption to Telegram...")
+    # 1. SEND SCREENSHOT WITH CAPTION
+    if screenshot_path and os.path.exists(screenshot_path):
+        print("Sending Excel screenshot with report caption...")
         try:
-            # 💡 'with open' का उपयोग करने से फ़ाइल भेजने के बाद अपने आप बंद हो जाती है
-            with open(excel_path, "rb") as document:
-                response = requests.post(
-                    f"{base_url}/sendDocument",
+            with open(screenshot_path, "rb") as photo:
+                telegram_request(
+                    f"{base_url}/sendPhoto",
                     data={"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"},
-                    files={"document": document},
-                    timeout=60
+                    files={"photo": photo}
                 )
-            print(f"Telegram Server Response: {response.status_code} - {response.text}")
+        except Exception as e:
+            print("Screenshot Telegram Error:", e)
+
+    # 2. SEND EXCEL FILE
+    if excel_path and os.path.exists(excel_path):
+        print("Sending Excel file...")
+        try:
+            with open(excel_path, "rb") as document:
+                telegram_request(
+                    f"{base_url}/sendDocument",
+                    data={"chat_id": chat_id},
+                    files={"document": document}
+                )
         except Exception as e:
             print("Excel Telegram Error:", e)
-    else:
-        print(f"Error: Excel path does not exist for Telegram: {excel_path}")
+
+    print("Telegram dispatch completed.")
+
+# ============================================================
+# CREATE EXCEL SCREENSHOT (YOUR MATPLOTLIB LOGIC)
+# ============================================================
+def create_excel_screenshot(df, screenshot_path):
+    print("Creating Excel-style screenshot...")
+    if df.empty:
+        print("No records available for screenshot.")
+        return
+
+    display_df = df.copy()
+    preferred_columns = [
+        "State", "Division", "Cluster", "Branch", "Branch Code", 
+        "Employee", "Employee ID", "Designation", "Opening Balance", 
+        "Collection", "Deposit", "Closing Balance", "Status"
+    ]
+    screenshot_columns = [col for col in preferred_columns if col in display_df.columns]
+    
+    # अधिकतम टॉप 15 रिकॉर्ड्स दिखाना स्क्रीनशॉट इमेज के लिए
+    display_df = display_df[screenshot_columns].head(15)
+
+    fig, ax = plt.subplots(figsize=(14, len(display_df) * 0.4 + 1.5))
+    ax.axis('tight')
+    ax.axis('off')
+
+    table = ax.table(
+        cellText=display_df.values,
+        colLabels=display_df.columns,
+        cellLoc='center',
+        loc='center'
+    )
+
+    # स्टाइलिंग
+    table.auto_set_font_size(False)
+    table.set_font_size(9)
+    table.scale(1.2, 1.3)
+
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:
+            cell.set_text_props(weight='bold', color='white')
+            cell.set_facecolor('#4F81BD')
+        else:
+            # स्टेटस 'Inactive' होने पर ग्रे कलर बैकग्राउंड सेट करना
+            status_val = str(display_df.iloc[row-1]['Status']).strip().lower() if 'Status' in display_df.columns else ''
+            if 'inactive' in status_val or 'grey' in status_val:
+                cell.set_facecolor('#D9D9D9') # Grey background for Inactive
+            elif row % 2 == 0:
+                cell.set_facecolor('#F2F2F2')
+            else:
+                cell.set_facecolor('white')
+
+    plt.savefig(screenshot_path, bbox_inches='tight', dpi=200)
+    plt.close()
+    print("Screenshot created successfully.")
 
 # ============================================================
 # MAIN AUTOMATION & FILTER PROCESS
 # ============================================================
 def run_cash_balance_report_job():
-    if not USERNAME or not PASSWORD or not LOGIN_URL:
-        print("Error: Environment Variables (Secrets) missing!")
-        return
-
+    validate_configuration()
+    
+    # अस्थाई रॉ डाउनलोड पाथ
     raw_download_path = os.path.join(BASE_DIR, "temp_raw_data.xlsx")
 
     with sync_playwright() as p:
         print("Browser ओपन किया जा रहा है...")
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         page = context.new_page()
         
@@ -76,13 +199,15 @@ def run_cash_balance_report_job():
                     break
 
         try:
+            print("लॉगिन डिटेल्स भरी जा रही हैं...")
             target.locator("input[type='text'], input[type='email'], input[name='username'], #username").first.fill(str(USERNAME))
             target.locator("input[type='password'], #password").first.fill(str(PASSWORD))
+            time.sleep(1)
             target.locator("button[type='submit'], input[type='submit'], button:has-text('Login')").first.click()
             print("लॉगिन सबमिट हो गया।")
             time.sleep(10)
         except Exception as e:
-            print("लॉगिन स्टेप स्किप या फेल:", e)
+            print("लॉगिन स्टेप फेल या स्किप:", e)
 
         for f in page.frames:
             if "main" in f.name.lower() or "report" in f.name.lower() or len(f.name) > 0:
@@ -112,7 +237,7 @@ def run_cash_balance_report_job():
         browser.close()
 
     # ============================================================
-    # DATA PROCESSING & FILTERING (A to Z)
+    # PANDAS DATA PROCESSING & FILTERING (A to Z FIXED)
     # ============================================================
     if not os.path.exists(raw_download_path):
         print("Error: एक्सेल फ़ाइल नहीं मिली! डाउनलोड फेल हुआ।")
@@ -122,46 +247,8 @@ def run_cash_balance_report_job():
     df = pd.read_excel(raw_download_path)
     df.columns = df.columns.str.strip()
     
-    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower()), 'Pending')
+    # कॉलम नाम ऑटो-डिटेक्ट करना (Pending या Cash, और Employee या Name के लिए)
+    pending_col = next((c for c in df.columns if 'pending' in c.lower() or 'cash' in c.lower() or 'closing' in c.lower()), 'Closing Balance')
     emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), 'Employee')
+    status_col = next((c for c in df.columns if 'status' in c.lower() or 'state' in c.lower()), 'Status')
     
-    df[pending_col] = pd.to_numeric(df[pending_col], errors='coerce').fillna(0)
-    df[emp_col] = df[emp_col].astype(str).str.strip()
-    
-    # फ़िल्टर: सिर्फ Pending > 0 (Active + Inactive दोनों शामिल)
-    filtered_df = df[df[pending_col] > 0].copy()
-    
-    # ऑटो सॉर्टिंग: A to Z
-    filtered_df = filtered_df.sort_values(by=emp_col, ascending=True)
-    
-    # नई एक्सेल फ़ाइल सेव करना
-    filtered_df.to_excel(OUTPUT_FILE_PATH, index=False)
-    print(f"नई फ़िल्टर्ड रिपोर्ट सेव हो गई: {OUTPUT_FILE_PATH}")
-    
-    # 💡 फ़ाइल राइट होने के लिए 2 सेकंड का होल्ड
-    time.sleep(2)
-
-    total_cases = len(filtered_df)
-    total_amount = filtered_df[pending_col].sum()
-    
-    summary_message = (
-        "🌅 *Cash Balance Pending Report (A to Z)*\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👥 *Total Pending Employees:* {total_cases}\n"
-        f"💰 *Total Pending Amount:* ₹{total_amount:,.2f}\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "📢 *Note:* इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं। डेटा A to Z नाम के क्रम में है।"
-    )
-    
-    # 💡 टेलीग्राम पर फाइनल सेंड (फ़ाइल डिलीट करने से पहले)
-    send_telegram_report(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, summary_message, OUTPUT_FILE_PATH)
-
-    # 💡 सबसे अंत में अस्थाई फ़ाइलें डिलीट करना
-    try:
-        if os.path.exists(raw_download_path):
-            os.remove(raw_download_path)
-    except Exception:
-        pass
-
-if __name__ == "__main__":
-    run_cash_balance_report_job()
