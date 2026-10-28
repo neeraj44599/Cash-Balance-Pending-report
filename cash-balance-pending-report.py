@@ -252,3 +252,35 @@ def run_cash_balance_report_job():
     emp_col = next((c for c in df.columns if 'emp' in c.lower() or 'name' in c.lower()), 'Employee')
     status_col = next((c for c in df.columns if 'status' in c.lower() or 'state' in c.lower()), 'Status')
     
+    df[pending_col] = pd.to_numeric(df[pending_col], errors='coerce').fillna(0)
+    df[emp_col] = df[emp_col].astype(str).str.strip()
+    if status_col in df.columns:
+    df[status_col] = df[status_col].apply(clean_status)
+    # 💡 फ़िल्टर: सिर्फ Pending 0 वालों को हटाना है (Active और Inactive Grey वाले दोनों रहेंगे)
+    filtered_df = df[df[pending_col] > 0].copy()
+    # 💡 ऑटो सॉर्टिंग: पैसों के बजाय कर्मचारियों के नाम के हिसाब से A to Z क्रम में सेट करना
+    filtered_df = filtered_df.sort_values(by=emp_col, ascending=True)
+    # फाइनल एक्सेल फ़ाइल सेव करना
+    filtered_df.to_excel(OUTPUT_FILE_PATH, index=False)
+    print(f"नई फ़िल्टर्ड रिपोर्ट सेव हो गई: {OUTPUT_FILE_PATH}")
+    # स्क्रीनशॉट इमेज बनाना
+    create_excel_screenshot(filtered_df, SCREENSHOT_PATH)
+    if os.path.exists(raw_download_path):
+    os.remove(raw_download_path)
+    total_cases = len(filtered_df)
+    total_amount = filtered_df[pending_col].sum()
+    summary_message = (
+    "🌅 Cash Balance Pending Report (A to Z)\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    f"👥 Total Pending Employees: {total_cases}\n"
+    f"💰 Total Pending Amount: ₹{total_amount:,.2f}\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "📢 Note: इस लिस्ट में Active और Inactive दोनों कर्मचारी शामिल हैं। 0 पेंडिंग वाले लोगों को हटा दिया गया है और डेटा को नाम के अनुसार A to Z व्यवस्थित किया गया है।"
+    )
+    # टेलीग्राम पर पब्लिश करना (मेसेज + इमेज स्क्रीनशॉट + एक्सेल शीट)
+    send_telegram_report(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, summary_message, OUTPUT_FILE_PATH, SCREENSHOT_PATH)
+    if name == "main":
+    try:
+    run_cash_balance_report_job()
+    except Exception as e:
+    print(f"इस रिपोर्ट जॉब में एरर आया: {e}")
